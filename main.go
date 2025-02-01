@@ -36,10 +36,10 @@ func main() {
 	w := a.NewWindow("Fisherman")
 
 	w.SetFixedSize(true)
-	w.Resize(fyne.NewSize(770, 200))
+	w.Resize(fyne.NewSize(670, 280))
 
 	// Create table headers (remove duplicate "Status" and reorder columns)
-	headers := []string{"", "ID", "Image", "Cmd", "Created", "Ports", "Names", ""}
+	headers := []string{"", "ID", "Image", "Created", "Ports", "Name", ""}
 
 	// Create variables to store the current state
 	var data [][]string
@@ -94,10 +94,10 @@ func main() {
 					button.SetText("Kill")
 					button.OnTapped = func() {
 						c := containers[row]
-						if err := killDockerContainer(*c); err == nil {
+						if err := killDockerContainer(*c); err != nil {
 							a.SendNotification(&fyne.Notification{
-								Title:   "Container Killed",
-								Content: fmt.Sprintf("Container %s has been killed", c.ID[:12]),
+								Title:   "Error",
+								Content: fmt.Sprintf("Error killing %s container %s: %v", c.Image, c.ID, err),
 							})
 						}
 					}
@@ -106,12 +106,11 @@ func main() {
 			default: // Regular data columns
 				text := data[row][i.Col]
 				if maxLen := map[int]int{
-					1: 12,  // ID
+					1: 12, // ID
 					2: 7,  // Image
-					3: 10, // Command
-					4: 15,  // Created
-					5: 10,  // Ports
-					6: 20,  // Names
+					3: 15, // Created
+					4: 10, // Ports
+					5: 20, // Names
 				}[i.Col]; maxLen > 0 && len(text) > maxLen {
 					text = text[:maxLen] + "..."
 				}
@@ -123,13 +122,12 @@ func main() {
 
 	// Adjust column widths (reduced by 50%)
 	table.SetColumnWidth(0, 30)  // Status column
-	table.SetColumnWidth(1, 120)  // ID column
+	table.SetColumnWidth(1, 120) // ID column
 	table.SetColumnWidth(2, 75)  // Image column
-	table.SetColumnWidth(3, 100) // Command column
-	table.SetColumnWidth(4, 130)  // Created column
-	table.SetColumnWidth(5, 75)  // Ports column
-	table.SetColumnWidth(6, 150)  // Names column
-	table.SetColumnWidth(7, 40)  // Actions column
+	table.SetColumnWidth(3, 130) // Created column
+	table.SetColumnWidth(4, 75)  // Ports column
+	table.SetColumnWidth(5, 150) // Names column
+	table.SetColumnWidth(6, 50)  // Actions column
 
 	// Function to update the table data
 	updateTable := func() {
@@ -142,7 +140,6 @@ func main() {
 				"",        // Status icon column
 				c.ID[:12], // Show shorter ID
 				c.Image,
-				c.Command,
 				c.Created,
 				c.Ports,
 				c.Names,
