@@ -2,6 +2,8 @@
 
 Fisherman is a lightweight, user-friendly GUI application for managing Docker containers. Built with Go and the Fyne toolkit, it provides a simple interface to monitor and control your Docker containers in real-time.
 
+This is largely a test of using Cursor to write a quick GUI application (and test out Fyne capabilities).
+
 ## Prerequisites
 
 - Docker installed and running
@@ -19,10 +21,6 @@ brew install go
 ```bash
 go run main.go
 ```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
