@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os/exec"
@@ -292,35 +293,9 @@ func parseDockerTime(timeStr string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("failed to parse time '%s': %v", timeStr, lastErr)
 }
 
-// createDockerContainer creates a DockerContainer from raw fields
-func createDockerContainer(fields []string) (*DockerContainer, error) {
-	if len(fields) != 7 {
-		return nil, fmt.Errorf("expected 7 fields, got %d", len(fields))
-	}
-
-	createdTime, err := parseDockerTime(fields[3])
-	created := fields[3] // fallback to original string if parsing fails
-	if err == nil {
-		created = formatRelativeTime(createdTime)
-	}
-
-	return &DockerContainer{
-		ID:      fields[0],
-		Image:   fields[1],
-		Command: fields[2],
-		Created: created,
-		Status:  fields[4],
-		Ports:   fields[5],
-		Names:   fields[6],
-	}, nil
-}
-
 // getDockerContainers returns a list of Docker containers
 func getDockerContainers() []*DockerContainer {
-	// Use format to get exactly the fields we want in a predictable format
-	// Each field is separated by a triple pipe (|||) to avoid conflicts with potential content
-	format := `{{.ID}}|||{{.Image}}|||{{.Command}}|||{{.CreatedAt}}|||{{.Status}}|||{{.Ports}}|||{{.Names}}`
-	cmd := exec.Command("docker", "ps", "--format", format)
+	cmd := exec.Command("docker", "ps", "--format", "{{json .}}")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("Error running docker ps: %v", err)
@@ -336,14 +311,36 @@ func getDockerContainers() []*DockerContainer {
 			continue
 		}
 
-		// Split by our custom delimiter
-		fields := strings.Split(line, "|||")
-		container, err := createDockerContainer(fields)
-		if err != nil {
-			log.Printf("Error creating container from fields: %v", err)
+		var rawContainer struct {
+			ID      string `json:"ID"`
+			Image   string `json:"Image"`
+			Command string `json:"Command"`
+			Created string `json:"CreatedAt"`
+			Status  string `json:"Status"`
+			Ports   string `json:"Ports"`
+			Names   string `json:"Names"`
+		}
+
+		if err := json.Unmarshal([]byte(line), &rawContainer); err != nil {
+			log.Printf("Error parsing container JSON: %v", err)
 			continue
 		}
-		containers = append(containers, container)
+
+		createdTime, err := parseDockerTime(rawContainer.Created)
+		created := rawContainer.Created // fallback to original string if parsing fails
+		if err == nil {
+			created = formatRelativeTime(createdTime)
+		}
+
+		containers = append(containers, &DockerContainer{
+			ID:      rawContainer.ID,
+			Image:   rawContainer.Image,
+			Command: rawContainer.Command,
+			Created: created,
+			Status:  rawContainer.Status,
+			Ports:   rawContainer.Ports,
+			Names:   rawContainer.Names,
+		})
 	}
 
 	if err := scanner.Err(); err != nil {
