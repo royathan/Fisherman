@@ -28,9 +28,21 @@ type DockerContainer struct {
 	Names   string
 }
 
+// Add this new custom theme type and implementation
+type CustomTheme struct {
+	fyne.Theme
+}
+
+func (t *CustomTheme) TextStyle() fyne.TextStyle {
+	return fyne.TextStyle{Monospace: true}
+}
+
 func main() {
 	// Create a new Fyne app
 	a := app.New()
+
+	// Set default text style to monospace for the entire app
+	a.Settings().SetTheme(&CustomTheme{a.Settings().Theme()})
 
 	// Create a new window
 	w := a.NewWindow("Fisherman")
@@ -66,6 +78,9 @@ func main() {
 			// Hide both by default
 			label.Hide()
 			button.Hide()
+
+			// Reset text style by default
+			label.TextStyle = fyne.TextStyle{}
 
 			if i.Row == 0 {
 				// Header row
@@ -119,6 +134,9 @@ func main() {
 			}
 		},
 	)
+
+	// Hide table dividing lines
+	table.HideSeparators = true
 
 	// Adjust column widths (reduced by 50%)
 	table.SetColumnWidth(0, 30)  // Status column
