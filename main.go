@@ -26,9 +26,6 @@ type DockerContainer struct {
 	Status  string
 	Ports   string
 	Names   string
-	Icon    *widget.Label
-	KillBtn *widget.Button
-	KillAll *widget.Button
 }
 
 func main() {
@@ -67,46 +64,59 @@ func main() {
 			button := container.Objects[1].(*widget.Button)
 
 			// Hide both by default
-			label.Show()
+			label.Hide()
 			button.Hide()
-
-			if i.Col == len(headers)-1 && i.Row > 0 && i.Row-1 < len(killButtons) {
-				label.Hide()
-				button.Show()
-				button.OnTapped = killButtons[i.Row-1].OnTapped
-				return
-			}
 
 			if i.Row == 0 {
 				// Header row
 				label.TextStyle = fyne.TextStyle{Bold: true}
 				label.SetText(headers[i.Col])
-			} else if i.Row-1 < len(data) {
-				row := i.Row - 1
-				if i.Col == 0 {
-					// Status icon column
-					icon := "🔴"
-					if strings.Contains(containers[row].Status, "Up") {
-						icon = "🟢"
-					}
-					label.SetText(icon)
-				} else if i.Col < len(headers)-1 && row < len(data) {
-					// Regular data columns
-					text := data[row][i.Col]
-					// Use fixed max lengths based on column widths
-					maxLen := map[int]int{
-						1: 10, // ID
-						2: 15, // Image
-						3: 20, // Command
-						4: 10, // Created
-						5: 15, // Ports
-						6: 15, // Names
-					}[i.Col]
-					if maxLen > 0 && len(text) > maxLen {
-						text = text[:maxLen] + "..."
-					}
-					label.SetText(text)
+				label.Show()
+				return
+			}
+
+			row := i.Row - 1
+			if row >= len(data) {
+				return
+			}
+
+			// Handle special columns
+			switch i.Col {
+			case 0: // Status column
+				icon := "🔴"
+				if strings.Contains(containers[row].Status, "Up") {
+					icon = "🟢"
 				}
+				label.SetText(icon)
+				label.Show()
+			case len(headers) - 1: // Actions column
+				if row < len(killButtons) {
+					button.SetText("Kill")
+					button.OnTapped = func() {
+						c := containers[row]
+						if err := killDockerContainer(*c); err == nil {
+							a.SendNotification(&fyne.Notification{
+								Title:   "Container Killed",
+								Content: fmt.Sprintf("Container %s has been killed", c.ID[:12]),
+							})
+						}
+					}
+					button.Show()
+				}
+			default: // Regular data columns
+				text := data[row][i.Col]
+				if maxLen := map[int]int{
+					1: 10, // ID
+					2: 15, // Image
+					3: 20, // Command
+					4: 10, // Created
+					5: 15, // Ports
+					6: 15, // Names
+				}[i.Col]; maxLen > 0 && len(text) > maxLen {
+					text = text[:maxLen] + "..."
+				}
+				label.SetText(text)
+				label.Show()
 			}
 		},
 	)
@@ -125,24 +135,12 @@ func main() {
 	updateTable := func() {
 		containers = getDockerContainers()
 		data = make([][]string, len(containers))
-		killButtons = make([]*widget.Button, 0, len(containers))
+		killButtons = make([]*widget.Button, len(containers))
 
 		for i, c := range containers {
-			// Create kill button
-			id := c.ID
-			killBtn := widget.NewButton("Kill", func() {
-				killDockerContainer(id)
-				a.SendNotification(&fyne.Notification{
-					Title:   "Container Killed",
-					Content: "Container " + id + " has been killed",
-				})
-			})
-			killButtons = append(killButtons, killBtn)
-
-			// Add data row
 			data[i] = []string{
-				"", // Status icon column
-				c.ID,
+				"",        // Status icon column
+				c.ID[:12], // Show shorter ID
 				c.Image,
 				c.Command,
 				c.Created,
@@ -171,24 +169,25 @@ func main() {
 		ticker.Stop()
 	})
 
-	// Create a kill all button
+	// Add back the Kill All button at the bottom
 	killAllBtn := widget.NewButton("Kill All", func() {
 		for _, c := range containers {
-			killDockerContainer(c.ID)
+			if err := killDockerContainer(*c); err == nil {
+				a.SendNotification(&fyne.Notification{
+					Title:   "Containers Killed",
+					Content: "All containers have been killed",
+				})
+			}
 		}
-		a.SendNotification(&fyne.Notification{
-			Title:   "Containers Killed",
-			Content: "All containers have been killed",
-		})
 	})
 
-	// Create a border container with the table and kill button
+	// Update the border container to include the Kill All button
 	content := container.NewBorder(
 		nil,
 		killAllBtn,
 		nil,
 		nil,
-		table,
+		container.NewMax(table),
 	)
 
 	// Set the content
@@ -292,23 +291,6 @@ func getDockerContainers() []*DockerContainer {
 			Names:   fields[6],
 		}
 
-		// Create a new icon based on the status
-		if strings.Contains(c.Status, "Up") {
-			c.Icon = widget.NewLabel("🟢")
-		} else {
-			c.Icon = widget.NewLabel("🔴")
-		}
-
-		// Create a new kill button
-		id := c.ID
-		c.KillBtn = widget.NewButton("Kill", func() {
-			killDockerContainer(id)
-			a.SendNotification(&fyne.Notification{
-				Title:   "Container Killed",
-				Content: "Container " + id + " has been killed",
-			})
-		})
-
 		containers = append(containers, c)
 	}
 
@@ -316,14 +298,11 @@ func getDockerContainers() []*DockerContainer {
 }
 
 // killDockerContainer kills a Docker container
-func killDockerContainer(id string) {
-	// Run the Docker kill command
-	cmd := exec.Command("docker", "kill", id)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Fatal(err)
+func killDockerContainer(container DockerContainer) error {
+	cmd := exec.Command("docker", "kill", container.ID)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("Error killing %s container %s: %v\n%s", container.Image, container.ID, err, output)
+		return err
 	}
-
-	// Print the output
-	fmt.Println(string(output))
+	return nil
 }
