@@ -39,7 +39,7 @@ func main() {
 	w := a.NewWindow("Fisherman")
 
 	// Set minimum window size
-	w.Resize(fyne.NewSize(800, 400))
+	w.Resize(fyne.NewSize(1030, 400))
 
 	// Create table headers (remove duplicate "Status" and reorder columns)
 	headers := []string{"Status", "ID", "Image", "Command", "Created", "Ports", "Names", "Actions"}
@@ -95,12 +95,12 @@ func main() {
 					text := data[row][i.Col]
 					// Use fixed max lengths based on column widths
 					maxLen := map[int]int{
-						1: 10,  // ID
-						2: 15,  // Image
-						3: 20,  // Command
-						4: 10,  // Created
-						5: 15,  // Ports
-						6: 15,  // Names
+						1: 10, // ID
+						2: 15, // Image
+						3: 20, // Command
+						4: 10, // Created
+						5: 15, // Ports
+						6: 15, // Names
 					}[i.Col]
 					if maxLen > 0 && len(text) > maxLen {
 						text = text[:maxLen] + "..."
@@ -198,60 +198,98 @@ func main() {
 	w.ShowAndRun()
 }
 
+// formatRelativeTime converts a timestamp to a relative time string
+func formatRelativeTime(t time.Time) string {
+	now := time.Now()
+	diff := now.Sub(t)
+
+	switch {
+	case diff < time.Minute:
+		return "just now"
+	case diff < time.Hour:
+		mins := int(diff.Minutes())
+		if mins == 1 {
+			return "1 minute ago"
+		}
+		return fmt.Sprintf("%d minutes ago", mins)
+	case diff < 24*time.Hour:
+		hours := int(diff.Hours())
+		if hours == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", hours)
+	case diff < 30*24*time.Hour:
+		days := int(diff.Hours() / 24)
+		if days == 1 {
+			return "1 day ago"
+		}
+		return fmt.Sprintf("%d days ago", days)
+	default:
+		months := int(diff.Hours() / 24 / 30)
+		if months == 1 {
+			return "1 month ago"
+		}
+		return fmt.Sprintf("%d months ago", months)
+	}
+}
+
 // getDockerContainers returns a list of Docker containers
 func getDockerContainers() []*DockerContainer {
-	// Run the Docker ps command with full container IDs
-	cmd := exec.Command("docker", "ps", "--no-trunc")
+	// Use format to get exactly the fields we want in a predictable format
+	// Each field is separated by a triple pipe (|||) to avoid conflicts with potential content
+	format := `{{.ID}}|||{{.Image}}|||{{.Command}}|||{{.CreatedAt}}|||{{.Status}}|||{{.Ports}}|||{{.Names}}`
+	cmd := exec.Command("docker", "ps", "--format", format)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Parse the output
-	scanner := bufio.NewScanner(bytes.NewReader(output))
 	var containers []*DockerContainer
-	scanner.Scan() // Skip the header
+	scanner := bufio.NewScanner(bytes.NewReader(output))
 
 	for scanner.Scan() {
 		line := scanner.Text()
-
-		// Find the command portion (everything between quotes)
-		commandStart := strings.Index(line, "\"")
-		commandEnd := strings.LastIndex(line, "\"")
-		command := ""
-		if commandStart != -1 && commandEnd != -1 && commandEnd > commandStart {
-			command = line[commandStart+1 : commandEnd]
-			// Remove the command portion from the line for proper field splitting
-			line = line[:commandStart] + line[commandEnd+1:]
-		}
-
-		// Split remaining fields
-		fields := strings.Fields(line)
-		if len(fields) < 6 {
+		if line == "" {
 			continue
 		}
 
-		// Find status and ports
-		var status, ports string
-		for i := 4; i < len(fields)-1; i++ {
-			if strings.Contains(fields[i], "Up") || strings.Contains(fields[i], "Exited") {
-				status = strings.Join(fields[i:i+2], " ")
-				if i+2 < len(fields)-1 {
-					ports = strings.Join(fields[i+2:len(fields)-1], " ")
+		// Split by our custom delimiter
+		fields := strings.Split(line, "|||")
+		if len(fields) != 7 {
+			continue
+		}
+
+		// Parse the creation time
+		createdTime, err := time.Parse("2006-01-02 15:04:05 -0700 MST", fields[3])
+		if err != nil {
+			// If the first format fails, try an alternative format (for RFC3339)
+			createdTime, err = time.Parse(time.RFC3339Nano, fields[3])
+			if err != nil {
+				// If parsing fails, use the original string
+				log.Printf("Error parsing time: %v", err)
+				c := &DockerContainer{
+					ID:      fields[0],
+					Image:   fields[1],
+					Command: fields[2],
+					Created: fields[3], // Use original string if parsing fails
+					Status:  fields[4],
+					Ports:   fields[5],
+					Names:   fields[6],
 				}
-				break
+				containers = append(containers, c)
+				continue
 			}
 		}
 
-		// Create a new Docker container
+		// Create a new Docker container with the exact fields
 		c := &DockerContainer{
 			ID:      fields[0],
 			Image:   fields[1],
-			Command: command,
-			Created: fields[2] + " " + fields[3],
-			Status:  status,
-			Ports:   ports,
-			Names:   fields[len(fields)-1],
+			Command: fields[2],
+			Created: formatRelativeTime(createdTime),
+			Status:  fields[4],
+			Ports:   fields[5],
+			Names:   fields[6],
 		}
 
 		// Create a new icon based on the status
