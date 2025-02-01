@@ -37,36 +37,28 @@ func (t *CustomTheme) TextStyle() fyne.TextStyle {
 	return fyne.TextStyle{Monospace: true}
 }
 
-func main() {
-	// Create a new Fyne app
-	a := app.New()
+// TableData holds the data and state for the container table
+type TableData struct {
+	headers     []string
+	data        [][]string
+	killButtons []*widget.Button
+	containers  []*DockerContainer
+	table       *widget.Table
+}
 
-	// Set default text style to monospace for the entire app
-	a.Settings().SetTheme(&CustomTheme{a.Settings().Theme()})
+// createTableData initializes a new TableData structure
+func createTableData() *TableData {
+	return &TableData{
+		headers: []string{"", "ID", "Image", "Created", "Ports", "Name", ""},
+	}
+}
 
-	// Create a new window
-	w := a.NewWindow("Fisherman")
-
-	w.SetFixedSize(true)
-	w.Resize(fyne.NewSize(670, 280))
-
-	// Create table headers (remove duplicate "Status" and reorder columns)
-	headers := []string{"", "ID", "Image", "Created", "Ports", "Name", ""}
-
-	// Create variables to store the current state
-	var data [][]string
-	var killButtons []*widget.Button
-	var containers []*DockerContainer
-
-	// Declare updateTable variable before use
-	var updateTable func()
-
-	// Create table
-	var table *widget.Table
-	table = widget.NewTable(
+// createTable creates and configures the container table
+func createTable(data *TableData, app fyne.App, updateFn func()) *widget.Table {
+	table := widget.NewTable(
 		// Function to get number of rows/cols
 		func() (int, int) {
-			return len(data) + 1, len(headers)
+			return len(data.data) + 1, len(data.headers)
 		},
 		// Function to create cell content
 		func() fyne.CanvasObject {
@@ -88,13 +80,13 @@ func main() {
 			if i.Row == 0 {
 				// Header row
 				label.TextStyle = fyne.TextStyle{Bold: true}
-				label.SetText(headers[i.Col])
+				label.SetText(data.headers[i.Col])
 				label.Show()
 				return
 			}
 
 			row := i.Row - 1
-			if row >= len(data) {
+			if row >= len(data.data) {
 				return
 			}
 
@@ -102,22 +94,22 @@ func main() {
 			switch i.Col {
 			case 0: // Status column
 				icon := "🔴"
-				if strings.Contains(containers[row].Status, "Up") {
+				if strings.Contains(data.containers[row].Status, "Up") {
 					icon = "🟢"
 				}
 				label.SetText(icon)
 				label.Show()
-			case len(headers) - 1: // Actions column
-				if row < len(killButtons) {
+			case len(data.headers) - 1: // Actions column
+				if row < len(data.killButtons) {
 					button.SetText("Kill")
 					button.OnTapped = func() {
-						c := containers[row]
+						c := data.containers[row]
 						err := killDockerContainer(*c)
 
 						if err == nil {
-							updateTable()
+							updateFn()
 						} else {
-							a.SendNotification(&fyne.Notification{
+							app.SendNotification(&fyne.Notification{
 								Title:   "Error",
 								Content: fmt.Sprintf("Error killing %s container %s: %v", c.Image, c.ID, err),
 							})
@@ -126,7 +118,7 @@ func main() {
 					button.Show()
 				}
 			default: // Regular data columns
-				text := data[row][i.Col]
+				text := data.data[row][i.Col]
 				if maxLen := map[int]int{
 					1: 12, // ID
 					2: 7,  // Image
@@ -145,7 +137,7 @@ func main() {
 	// Hide table dividing lines
 	table.HideSeparators = true
 
-	// Adjust column widths (reduced by 50%)
+	// Adjust column widths
 	table.SetColumnWidth(0, 30)  // Status column
 	table.SetColumnWidth(1, 120) // ID column
 	table.SetColumnWidth(2, 75)  // Image column
@@ -154,35 +146,64 @@ func main() {
 	table.SetColumnWidth(5, 150) // Names column
 	table.SetColumnWidth(6, 50)  // Actions column
 
-	// Define updateTable function
-	updateTable = func() {
-		containers = getDockerContainers()
-		data = make([][]string, len(containers))
-		killButtons = make([]*widget.Button, len(containers))
+	data.table = table
+	return table
+}
 
-		for i, c := range containers {
-			data[i] = []string{
-				"",        // Status icon column
-				c.ID[:12], // Show shorter ID
-				c.Image,
-				c.Created,
-				c.Ports,
-				c.Names,
-				"", // Kill button column
-			}
+// updateTableData updates the table data with current container information
+func updateTableData(data *TableData) {
+	data.containers = getDockerContainers()
+	data.data = make([][]string, len(data.containers))
+	data.killButtons = make([]*widget.Button, len(data.containers))
+
+	for i, c := range data.containers {
+		data.data[i] = []string{
+			"",        // Status icon column
+			c.ID[:12], // Show shorter ID
+			c.Image,
+			c.Created,
+			c.Ports,
+			c.Names,
+			"", // Kill button column
 		}
-
-		table.Refresh()
 	}
 
+	if data.table != nil {
+		data.table.Refresh()
+	}
+}
+
+func main() {
+	// Create a new Fyne app
+	a := app.New()
+
+	// Set default text style to monospace for the entire app
+	a.Settings().SetTheme(&CustomTheme{a.Settings().Theme()})
+
+	// Create a new window
+	w := a.NewWindow("Fisherman")
+	w.SetFixedSize(true)
+	w.Resize(fyne.NewSize(670, 280))
+
+	// Initialize table data
+	tableData := createTableData()
+
+	// Create update function
+	updateFn := func() {
+		updateTableData(tableData)
+	}
+
+	// Create table
+	table := createTable(tableData, a, updateFn)
+
 	// Initial update
-	updateTable()
+	updateFn()
 
 	// Create a ticker for live updates (every 1 second)
 	ticker := time.NewTicker(time.Second)
 	go func() {
 		for range ticker.C {
-			updateTable()
+			updateFn()
 		}
 	}()
 
@@ -191,11 +212,11 @@ func main() {
 		ticker.Stop()
 	})
 
-	// Add back the Kill All button at the bottom
+	// Add the Kill All button at the bottom
 	killAllBtn := widget.NewButton("Kill All", func() {
-		for _, c := range containers {
+		for _, c := range tableData.containers {
 			if err := killDockerContainer(*c); err == nil {
-				updateTable()
+				updateFn()
 				a.SendNotification(&fyne.Notification{
 					Title:   "Containers Killed",
 					Content: "All containers have been killed",
@@ -204,7 +225,7 @@ func main() {
 		}
 	})
 
-	// Update the border container to include the Kill All button
+	// Create the content layout
 	content := container.NewBorder(
 		nil,
 		killAllBtn,
@@ -213,10 +234,8 @@ func main() {
 		container.NewStack(table),
 	)
 
-	// Set the content
+	// Set the content and show the window
 	w.SetContent(content)
-
-	// Show the window
 	w.ShowAndRun()
 }
 
@@ -255,6 +274,47 @@ func formatRelativeTime(t time.Time) string {
 	}
 }
 
+// parseDockerTime attempts to parse a docker timestamp in various formats
+func parseDockerTime(timeStr string) (time.Time, error) {
+	formats := []string{
+		"2006-01-02 15:04:05 -0700 MST",
+		time.RFC3339Nano,
+	}
+
+	var lastErr error
+	for _, format := range formats {
+		if t, err := time.Parse(format, timeStr); err == nil {
+			return t, nil
+		} else {
+			lastErr = err
+		}
+	}
+	return time.Time{}, fmt.Errorf("failed to parse time '%s': %v", timeStr, lastErr)
+}
+
+// createDockerContainer creates a DockerContainer from raw fields
+func createDockerContainer(fields []string) (*DockerContainer, error) {
+	if len(fields) != 7 {
+		return nil, fmt.Errorf("expected 7 fields, got %d", len(fields))
+	}
+
+	createdTime, err := parseDockerTime(fields[3])
+	created := fields[3] // fallback to original string if parsing fails
+	if err == nil {
+		created = formatRelativeTime(createdTime)
+	}
+
+	return &DockerContainer{
+		ID:      fields[0],
+		Image:   fields[1],
+		Command: fields[2],
+		Created: created,
+		Status:  fields[4],
+		Ports:   fields[5],
+		Names:   fields[6],
+	}, nil
+}
+
 // getDockerContainers returns a list of Docker containers
 func getDockerContainers() []*DockerContainer {
 	// Use format to get exactly the fields we want in a predictable format
@@ -263,7 +323,8 @@ func getDockerContainers() []*DockerContainer {
 	cmd := exec.Command("docker", "ps", "--format", format)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Error running docker ps: %v", err)
+		return nil
 	}
 
 	var containers []*DockerContainer
@@ -277,44 +338,16 @@ func getDockerContainers() []*DockerContainer {
 
 		// Split by our custom delimiter
 		fields := strings.Split(line, "|||")
-		if len(fields) != 7 {
+		container, err := createDockerContainer(fields)
+		if err != nil {
+			log.Printf("Error creating container from fields: %v", err)
 			continue
 		}
+		containers = append(containers, container)
+	}
 
-		// Parse the creation time
-		createdTime, err := time.Parse("2006-01-02 15:04:05 -0700 MST", fields[3])
-		if err != nil {
-			// If the first format fails, try an alternative format (for RFC3339)
-			createdTime, err = time.Parse(time.RFC3339Nano, fields[3])
-			if err != nil {
-				// If parsing fails, use the original string
-				log.Printf("Error parsing time: %v", err)
-				c := &DockerContainer{
-					ID:      fields[0],
-					Image:   fields[1],
-					Command: fields[2],
-					Created: fields[3], // Use original string if parsing fails
-					Status:  fields[4],
-					Ports:   fields[5],
-					Names:   fields[6],
-				}
-				containers = append(containers, c)
-				continue
-			}
-		}
-
-		// Create a new Docker container with the exact fields
-		c := &DockerContainer{
-			ID:      fields[0],
-			Image:   fields[1],
-			Command: fields[2],
-			Created: formatRelativeTime(createdTime),
-			Status:  fields[4],
-			Ports:   fields[5],
-			Names:   fields[6],
-		}
-
-		containers = append(containers, c)
+	if err := scanner.Err(); err != nil {
+		log.Printf("Error scanning docker ps output: %v", err)
 	}
 
 	return containers
