@@ -58,6 +58,9 @@ func main() {
 	var killButtons []*widget.Button
 	var containers []*DockerContainer
 
+	// Declare updateTable variable before use
+	var updateTable func()
+
 	// Create table
 	var table *widget.Table
 	table = widget.NewTable(
@@ -67,7 +70,7 @@ func main() {
 		},
 		// Function to create cell content
 		func() fyne.CanvasObject {
-			return container.NewMax(widget.NewLabel(""), widget.NewButton("Kill", nil))
+			return container.NewStack(widget.NewLabel(""), widget.NewButton("Kill", nil))
 		},
 		// Function to update cell content
 		func(i widget.TableCellID, o fyne.CanvasObject) {
@@ -109,7 +112,11 @@ func main() {
 					button.SetText("Kill")
 					button.OnTapped = func() {
 						c := containers[row]
-						if err := killDockerContainer(*c); err != nil {
+						err := killDockerContainer(*c)
+
+						if err == nil {
+							updateTable()
+						} else {
 							a.SendNotification(&fyne.Notification{
 								Title:   "Error",
 								Content: fmt.Sprintf("Error killing %s container %s: %v", c.Image, c.ID, err),
@@ -147,8 +154,8 @@ func main() {
 	table.SetColumnWidth(5, 150) // Names column
 	table.SetColumnWidth(6, 50)  // Actions column
 
-	// Function to update the table data
-	updateTable := func() {
+	// Define updateTable function
+	updateTable = func() {
 		containers = getDockerContainers()
 		data = make([][]string, len(containers))
 		killButtons = make([]*widget.Button, len(containers))
@@ -188,6 +195,7 @@ func main() {
 	killAllBtn := widget.NewButton("Kill All", func() {
 		for _, c := range containers {
 			if err := killDockerContainer(*c); err == nil {
+				updateTable()
 				a.SendNotification(&fyne.Notification{
 					Title:   "Containers Killed",
 					Content: "All containers have been killed",
@@ -202,7 +210,7 @@ func main() {
 		killAllBtn,
 		nil,
 		nil,
-		container.NewMax(table),
+		container.NewStack(table),
 	)
 
 	// Set the content
