@@ -35,11 +35,11 @@ func main() {
 	// Create a new window
 	w := a.NewWindow("Fisherman")
 
-	// Set minimum window size
-	w.Resize(fyne.NewSize(1030, 400))
+	w.SetFixedSize(true)
+	w.Resize(fyne.NewSize(770, 200))
 
 	// Create table headers (remove duplicate "Status" and reorder columns)
-	headers := []string{"Status", "ID", "Image", "Command", "Created", "Ports", "Names", "Actions"}
+	headers := []string{"", "ID", "Image", "Cmd", "Created", "Ports", "Names", ""}
 
 	// Create variables to store the current state
 	var data [][]string
@@ -106,12 +106,12 @@ func main() {
 			default: // Regular data columns
 				text := data[row][i.Col]
 				if maxLen := map[int]int{
-					1: 10, // ID
-					2: 15, // Image
-					3: 20, // Command
-					4: 10, // Created
-					5: 15, // Ports
-					6: 15, // Names
+					1: 12,  // ID
+					2: 7,  // Image
+					3: 10, // Command
+					4: 15,  // Created
+					5: 10,  // Ports
+					6: 20,  // Names
 				}[i.Col]; maxLen > 0 && len(text) > maxLen {
 					text = text[:maxLen] + "..."
 				}
@@ -121,15 +121,15 @@ func main() {
 		},
 	)
 
-	// Adjust column widths
-	table.SetColumnWidth(0, 60)  // Status column
-	table.SetColumnWidth(1, 100) // ID column
-	table.SetColumnWidth(2, 150) // Image column
-	table.SetColumnWidth(3, 200) // Command column
-	table.SetColumnWidth(4, 100) // Created column
-	table.SetColumnWidth(5, 150) // Ports column
-	table.SetColumnWidth(6, 150) // Names column
-	table.SetColumnWidth(7, 80)  // Actions column
+	// Adjust column widths (reduced by 50%)
+	table.SetColumnWidth(0, 30)  // Status column
+	table.SetColumnWidth(1, 120)  // ID column
+	table.SetColumnWidth(2, 75)  // Image column
+	table.SetColumnWidth(3, 100) // Command column
+	table.SetColumnWidth(4, 130)  // Created column
+	table.SetColumnWidth(5, 75)  // Ports column
+	table.SetColumnWidth(6, 150)  // Names column
+	table.SetColumnWidth(7, 40)  // Actions column
 
 	// Function to update the table data
 	updateTable := func() {
