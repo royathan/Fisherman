@@ -24,6 +24,14 @@ brew install go
 go run main.go
 ```
 
+## Package
+
+You can build a full MacOS app by running:
+
+```bash
+make
+```
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.

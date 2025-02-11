@@ -182,7 +182,7 @@ func main() {
 	a.Settings().SetTheme(&CustomTheme{a.Settings().Theme()})
 
 	// Create a new window
-	w := a.NewWindow("Fisherman")
+	w := a.NewWindow("🎣")
 	w.SetFixedSize(true)
 	w.Resize(fyne.NewSize(670, 280))
 
